@@ -97,3 +97,14 @@ func PostJson(reqUrl string, target interface{}, params interface{}, headers map
 	// err = json.NewDecoder(resp.Body).Decode(target)
 	return nil
 }
+
+func GetCookieByRespHeader(header http.Header) string {
+	cookie := ""
+	for _, item:= range header.Values("Set-Cookie") {
+		if strings.Index(item, "=deleted;") > 0 {
+			continue
+		}
+		cookie += strings.Split(item, ";")[0]+";"
+	}
+	return cookie
+}
