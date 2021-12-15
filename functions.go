@@ -1,37 +1,38 @@
 package tools
 
 import (
+	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/md5"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"github.com/tszl004/go_tools/http_client"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/pkg/sftp"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/storage"
 	"golang.org/x/crypto/ssh"
 )
-
+var (
+	httpCli = http_client.NewClient()
+)
 // MD5 md5加密
 func MD5(params string) string {
 	md5Ctx := md5.New()
@@ -97,161 +98,12 @@ func DecodeB64(message string) string {
 	return string(base64Text)
 }
 
-/// 飞书通知渠道
-type notifyChannelFeiShu struct {
-	// 渠道接口地址
-	Webhook string
-}
-type FeishuContentPiece struct {
-	tag  string
-	text string
-}
-
-func (n notifyChannelFeiShu) Send(title, message string, content map[string]string) (res bool, err error) {
-	resp := make(map[string]interface{})
-	var con [][]map[string]string
-	con = append(con, []map[string]string{{"tag": "text", "text": message}})
-	for _, k := range reflect.ValueOf(content).MapKeys() {
-		con = append(con, []map[string]string{{"tag": "text", "text": k.String() + content[k.String()]}})
-	}
-	tmp := map[string]interface{}{
-		"msg_type": "post",
-		"content": map[string]interface{}{
-			"post": map[string]interface{}{
-				"zh_cn": map[string]interface{}{
-					"title":   title,
-					"content": con,
-				},
-			},
-		},
-	}
-	params, _ := json.Marshal(tmp)
-	err = PostJson(n.Webhook, &resp, params, map[string]string{}, "application/json")
-	if err != nil {
-		return
-	}
-	if code, ok := resp["StatusCode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("飞书发送失败 响应：%v", resp)
-	}
-	return true, nil
-}
-func (n *notifyChannelFeiShu) feishuToken() (string, error) {
-	var target = new(struct {
-		Code              int
-		Msg               string
-		TenantAccessToken string
-		Expire            int
-	})
-	params := url.Values{}
-	params.Set("app_id", "")
-	params.Set("app_secret", "")
-	err := GetJson("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/", target, params, map[string]string{})
-	if err != nil {
-		return "", err
-	}
-	return target.TenantAccessToken, nil
-}
-func (n notifyChannelFeiShu) SendHTML(title, message, content string) (res bool, err error) {
-	resp := make(map[string]interface{})
-	var con [][]map[string]string
-	con = append(con, []map[string]string{{"tag": "text", "text": message}, {"tag": "code", "text": content}})
-	tmp := map[string]interface{}{
-		"msg_type": "post",
-		"content": map[string]interface{}{
-			"post": map[string]interface{}{
-				"zh_cn": map[string]interface{}{
-					"title":   title,
-					"content": con,
-				},
-			},
-		},
-	}
-	params, _ := json.Marshal(tmp)
-	err = PostJson(n.Webhook, &resp, params, map[string]string{}, "application/json; charset=utf-8")
-	if err != nil {
-		return
-	}
-	if code, ok := resp["StatusCode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("飞书发送失败 响应：%v", resp)
-	}
-	return true, nil
-}
-
-/// 钉钉通知渠道
-type notifyChannelDingTalk struct {
-	// 渠道接口地址
-	Webhook string
-	// 秘钥
-	Secret      string
-	accessToken string
-	api         string
-}
-
-func (n notifyChannelDingTalk) getSign(timestamp int64) string {
-	str := fmt.Sprintf("%v\n%v", timestamp, n.Secret)
-	h := hmac.New(sha256.New, []byte(n.Secret))
-	h.Write([]byte(str))
-	// 将加密之后的字符串 base64加密 然后url encode加密
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
-}
-
-func (n notifyChannelDingTalk) Send(title, message string, content map[string]string) (res bool, err error) {
-	resp := make(map[string]interface{})
-
-	var con string
-	con = "####" + message
-	for _, k := range reflect.ValueOf(content).MapKeys() {
-		con += fmt.Sprintf("\n%s:\t%s", k.String(), content[k.String()])
-	}
-	tmp := map[string]interface{}{
-		"msgtype": "actionCard",
-		"actionCard": map[string]interface{}{
-			"title": title,
-			"text":  con,
-			"btns":  []int{},
-		},
-	}
-	params, _ := json.Marshal(tmp)
-	query := url.Values{}
-	query.Set("access_token", n.accessToken)
-	if n.Secret != "" {
-		timestamp := time.Now().UnixNano() / 1e6
-		query.Set("timestamp", fmt.Sprintf("%v", timestamp))
-		query.Set("sign", n.getSign(timestamp))
-	}
-	err = PostJson(n.api+query.Encode(), &resp, params, map[string]string{}, "application/json")
-	if err != nil {
-		return
-	}
-	if code, ok := resp["errcode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("钉钉消息发送失败 响应：%v", resp)
-	}
-	return true, nil
-}
-func (n notifyChannelDingTalk) SendHTML(title, message, content string) (res bool, err error) {
-
-	return true, nil
-}
-
-func NewFeiShuNotify(ApiUrl string) NotifyChan {
-	return notifyChannelFeiShu{ApiUrl}
-}
-func NewDingTalkNotify(webhook, secret string) NotifyChan {
-	accessToken := strings.Split(webhook, "access_token=")[1]
-	return notifyChannelDingTalk{webhook, secret, accessToken, "https://oapi.dingtalk.com/robot/send?"}
-}
-
-type NotifyChan interface {
-	Send(title, message string, content map[string]string) (res bool, err error)
-	SendHTML(title, message, content string) (res bool, err error)
-}
-
 func SliceColumn(structSlice []interface{}, key string) []interface{} {
 	rt := reflect.TypeOf(structSlice)
 	rv := reflect.ValueOf(structSlice)
-	if rt.Kind() == reflect.Slice { //切片类型
+	if rt.Kind() == reflect.Slice { // 切片类型
 		var sliceColumn []interface{}
-		elemt := rt.Elem() //获取切片元素类型
+		elemt := rt.Elem() // 获取切片元素类型
 		for i := 0; i < rv.Len(); i++ {
 			inxv := rv.Index(i)
 			if elemt.Kind() == reflect.Struct {
@@ -266,7 +118,7 @@ func SliceColumn(structSlice []interface{}, key string) []interface{} {
 						case reflect.Int, reflect.Int64:
 							sliceColumn = append(sliceColumn, strf.Int())
 						default:
-							//do nothing
+							// do nothing
 						}
 					}
 				}
@@ -277,20 +129,23 @@ func SliceColumn(structSlice []interface{}, key string) []interface{} {
 	return nil
 }
 
+// UploadS3
+// Deprecated: 这里暂不可使用
 func UploadS3(filename, key, contentType string) (string, error) {
-	accessKey := "AKIA43GWRT4J5RNRHPKN"
-	secretKey := "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"
-	//endPoint := "http://ap-southeast-1.amazonaws.com" //endpoint设置，不要动
+	// todo s3 代码有问题暂时不用
+	// accessKey := "AKIA43GWRT4J5RNRHPKN"
+	// secretKey := "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"
+	// endPoint := "http://ap-southeast-1.amazonaws.com" //endpoint设置，不要动
 
-	sess, err := session.NewSession(&aws.Config{
-		Credentials: credentials.NewStaticCredentials(accessKey, secretKey, ""),
-		Endpoint:    nil, //aws.String(endPoint),
-		Region:      aws.String("ap-southeast-1"),
-		//DisableSSL:       aws.Bool(true),
-		S3ForcePathStyle: aws.Bool(false), //virtual-host style方式，不要修改
-	})
+	// sess, err := session.NewSession(&aws.Config{
+	// 	Credentials: credentials.NewStaticCredentials(accessKey, secretKey, ""),
+	// 	Endpoint:    nil, //aws.String(endPoint),
+	// 	Region:      aws.String("ap-southeast-1"),
+	// 	//DisableSSL:       aws.Bool(true),
+	// 	S3ForcePathStyle: aws.Bool(false), //virtual-host style方式，不要修改
+	// })
 
-	bucket := "okrdslog-bucket"
+	// bucket := "okrdslog-bucket"
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -299,13 +154,13 @@ func UploadS3(filename, key, contentType string) (string, error) {
 
 	defer func() { _ = file.Close() }()
 
-	uploader := s3manager.NewUploader(sess)
-	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(key),
-		ContentType: aws.String(contentType),
-		Body:        file,
-	})
+	// uploader := s3manager.NewUploader(sess)
+	// _, err = uploader.Upload(&s3manager.UploadInput{
+	// 	Bucket:      aws.String(bucket),
+	// 	Key:         aws.String(key),
+	// 	ContentType: aws.String(contentType),
+	// 	Body:        file,
+	// })
 	return key, err
 }
 
@@ -466,4 +321,64 @@ func ParseToUrlValues(i interface{}) (values url.Values) {
 		values.Set(typ.Field(i).Name, v)
 	}
 	return
+}
+
+func ParseInt(s string) int {
+	s = strings.ReplaceAll(s, ",", "")
+	reg, _ := regexp.Compile(`^\d+`)
+	numStr := reg.FindString(s)
+	num, _ := strconv.Atoi(numStr)
+	return num
+}
+
+func ParseFloat64(s string) float64 {
+	f, _ := strconv.ParseFloat(strings.ReplaceAll(s, ",", ""), 64)
+	return f
+}
+
+func SplitToSliceInt(s, sep string) []int {
+	res := make([]int, 0)
+	for _, numStr := range strings.Split(s, sep) {
+		res = append(res, ParseInt(numStr))
+	}
+	return res
+}
+
+func RegexpMatchFirstStr(s, expr string) string {
+	r, err:= regexp.Compile(expr)
+	if err != nil {
+		return ""
+	}
+	return r.FindString(s)
+}
+
+func RegexMatchAll(s, expr string) []string {
+	r, err:= regexp.Compile(expr)
+	if err != nil {
+		return nil
+	}
+	return r.FindAllString(s, -1)
+}
+
+func randSeedReset() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+func RandIntN(n int) int {
+	randSeedReset()
+	return rand.Intn(n)
+}
+
+func RandRange(min, max int) int {
+	return rand.Intn(max - min) + min
+}
+
+// GbkToUtf8 GBK 转 UTF-8
+func GbkToUtf8(s []byte) ([]byte, error) {
+	reader := transform.NewReader(bytes.NewReader(s), simplifiedchinese.GBK.NewDecoder())
+	d, e := ioutil.ReadAll(reader)
+	if e != nil {
+		return nil, e
+	}
+	return d, nil
 }

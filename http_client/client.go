@@ -1,18 +1,26 @@
-package tools
+package http_client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/pkg/errors"
 )
 
-func GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
-	bodyBytes, _, resp, err := Get(reqUrl, params, headers)
+type client struct {
+	proxyUrl string
+	cli *http.Client
+}
+
+func (c client) GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
+	bodyBytes, _, resp, err := c.Get(reqUrl, params, headers)
 	bodyStr := string(bodyBytes)
 	if bodyStr == "" {
 		return resp, errors.New("响应体为空")
@@ -26,25 +34,46 @@ func GetJson(reqUrl string, target interface{}, params url.Values, headers map[s
 	return resp, nil
 }
 
-func Get(reqUrl string, params url.Values, headers map[string]string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c client) Get(reqUrl string, params url.Values, headers map[string]string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	reqHeader := http.Header{}
 	for k := range headers {
 		reqHeader.Set(k, headers[k])
 	}
 	reqUrl += "?" + params.Encode()
 
-	return httpClient(http.MethodGet, reqUrl, nil, reqHeader)
+	return c.httpClient(http.MethodGet, reqUrl, nil, reqHeader)
 }
 
-func httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c client) getClient() *http.Client{
+	if c.cli != nil {
+		return c.cli
+	}
+	if c.proxyUrl != ""{
+		proxy, _ := url.Parse(c.proxyUrl)
+		tr := &http.Transport{
+			Proxy:           http.ProxyURL(proxy),
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+
+		c.cli = &http.Client{
+			Transport: tr,
+			Timeout:   time.Second * 5, //超时时间
+		}
+	} else {
+		c.cli = &http.Client{}
+	}
+
+	return c.cli
+}
+
+func (c client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	req, err = http.NewRequest(reqMethod, reqUrl, reqBody)
 	if err != nil {
 		return nil, req, nil, err
 	}
 	req.Header = headers
 
-	cli := http.Client{}
-	resp, err = cli.Do(req)
+	resp, err = c.getClient().Do(req)
 	if err != nil {
 		return nil, req, nil, err
 	}
@@ -58,7 +87,7 @@ func httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http
 	return bodyBytes, req, resp, err
 }
 
-func Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c client) Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	var body io.Reader
 	switch params.(type) {
 	case url.Values:
@@ -79,11 +108,11 @@ func Post(reqUrl string, params interface{}, headers map[string]string, contentT
 	for k := range headers {
 		reqHeader.Set(k, headers[k])
 	}
-	return httpClient(http.MethodPost, reqUrl, body, reqHeader)
+	return c.httpClient(http.MethodPost, reqUrl, body, reqHeader)
 }
 
-func PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {
-	bodyBytes, req, _, err := Post(reqUrl, params, headers, contentType)
+func (c client) PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {
+	bodyBytes, req, _, err := c.Post(reqUrl, params, headers, contentType)
 	bodyStr := string(bodyBytes)
 	if bodyStr == "" {
 		return errors.New("响应体为空")
@@ -98,13 +127,10 @@ func PostJson(reqUrl string, target interface{}, params interface{}, headers map
 	return nil
 }
 
-func GetCookieByRespHeader(header http.Header) string {
-	cookie := ""
-	for _, item := range header.Values("Set-Cookie") {
-		if strings.Index(item, "=deleted;") > 0 {
-			continue
-		}
-		cookie += strings.Split(item, ";")[0] + ";"
+func NewClient(proxy ...string) *client {
+	var proxyUrl string
+	if len(proxy) > 0 {
+		proxyUrl = proxy[0]
 	}
-	return cookie
+	return &client{proxyUrl: proxyUrl}
 }
