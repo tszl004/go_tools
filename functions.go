@@ -382,3 +382,21 @@ func GbkToUtf8(s []byte) ([]byte, error) {
 	}
 	return d, nil
 }
+
+func NumToNumByteSlice(num int) []int {
+	res := make([]int, 0)
+	for num > 0 {
+		res = append(res, num % 10)
+		num /= 10
+	}
+	return ReverseIntSlice(res)
+}
+
+func ReverseIntSlice(list []int) []int {
+	length := len(list)
+	res := make([]int, length)
+	for i:= 0; i < length; i++ {
+		res[length - 1 - i] = list[i]
+	}
+	return res
+}

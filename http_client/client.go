@@ -15,19 +15,19 @@ import (
 )
 
 type client struct {
-	proxyUrl string
-	cli *http.Client
+	proxyUrl    string
+	cli         *http.Client
+	notRedirect bool
 }
 
 func (c client) GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
 	bodyBytes, _, resp, err := c.Get(reqUrl, params, headers)
-	bodyStr := string(bodyBytes)
-	if bodyStr == "" {
-		return resp, errors.New("响应体为空")
+	if len(bodyBytes) == 0 {
+		return resp, errors.Wrapf(err, "响应体为空")
 	}
-	err = json.Unmarshal([]byte(bodyStr), target)
+	err = json.Unmarshal(bodyBytes, target)
 	if err != nil {
-		return resp, errors.New(err.Error() + ", JSON:" + bodyStr)
+		return resp, errors.New(err.Error() + ", JSON:" + string(bodyBytes))
 	}
 	// 会出现 EOF错误暂时不知道是什么原因引起的
 	// err = json.NewDecoder(resp.Body).Decode(target)
@@ -44,11 +44,11 @@ func (c client) Get(reqUrl string, params url.Values, headers map[string]string)
 	return c.httpClient(http.MethodGet, reqUrl, nil, reqHeader)
 }
 
-func (c client) getClient() *http.Client{
+func (c client) getClient() *http.Client {
 	if c.cli != nil {
 		return c.cli
 	}
-	if c.proxyUrl != ""{
+	if c.proxyUrl != "" {
 		proxy, _ := url.Parse(c.proxyUrl)
 		tr := &http.Transport{
 			Proxy:           http.ProxyURL(proxy),
@@ -57,10 +57,15 @@ func (c client) getClient() *http.Client{
 
 		c.cli = &http.Client{
 			Transport: tr,
-			Timeout:   time.Second * 5, //超时时间
+			Timeout:   time.Second * 5, // 超时时间
 		}
 	} else {
 		c.cli = &http.Client{}
+	}
+	if c.notRedirect {
+		c.cli.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return NotRedirectErr
+		}
 	}
 
 	return c.cli
@@ -74,11 +79,11 @@ func (c client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, h
 	req.Header = headers
 
 	resp, err = c.getClient().Do(req)
-	if err != nil {
-		return nil, req, nil, err
+	// Not follow redirect err Skip
+	if err != nil && strings.Index(err.Error(), NotRedirectErr.Error()) < 0 {
+		return nil, req, resp, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, req, resp, err
@@ -96,6 +101,8 @@ func (c client) Post(reqUrl string, params interface{}, headers map[string]strin
 		body = strings.NewReader(params.(string))
 	case []byte:
 		body = bytes.NewBuffer(params.([]byte))
+	case nil:
+
 	default:
 		return nil, req, resp, errors.New("invalid params must be url.Values,[]byte or string")
 	}
@@ -127,10 +134,20 @@ func (c client) PostJson(reqUrl string, target interface{}, params interface{}, 
 	return nil
 }
 
+func (c client) FollowRedirect(redirect bool) {
+	c.notRedirect = redirect
+}
+
 func NewClient(proxy ...string) *client {
 	var proxyUrl string
 	if len(proxy) > 0 {
 		proxyUrl = proxy[0]
 	}
 	return &client{proxyUrl: proxyUrl}
+}
+
+func NewNotRedirectClient(proxy ...string) *client {
+	cli := NewClient(proxy...)
+	cli.notRedirect = true
+	return cli
 }
