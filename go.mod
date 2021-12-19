@@ -10,7 +10,9 @@ require (
 )
 
 require (
+	github.com/mitchellh/mapstructure v1.4.3
 	github.com/pkg/errors v0.9.1
+	golang.org/x/text v0.3.7
 	gorm.io/driver/mysql v1.2.1
 	gorm.io/driver/postgres v1.2.3
 	gorm.io/driver/sqlserver v1.2.1

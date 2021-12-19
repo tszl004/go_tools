@@ -14,16 +14,23 @@ import (
 )
 
 // 钉钉通知渠道
-type notifyChannelDingTalk struct {
+type dingTalk struct {
 	// 渠道接口地址
 	Webhook string
 	// 秘钥
 	Secret      string
 	accessToken string
-	api         string
 }
 
-func (n notifyChannelDingTalk) getSign(timestamp int64) string {
+func (n dingTalk) getAccessToken() string {
+	return strings.Split(n.Webhook, "access_token=")[1]
+}
+
+func (n dingTalk) getApi() string {
+	return "https://oapi.dingtalk.com/robot/send?"
+}
+
+func (n dingTalk) getSign(timestamp int64) string {
 	str := fmt.Sprintf("%v\n%v", timestamp, n.Secret)
 	h := hmac.New(sha256.New, []byte(n.Secret))
 	h.Write([]byte(str))
@@ -31,7 +38,7 @@ func (n notifyChannelDingTalk) getSign(timestamp int64) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-func (n notifyChannelDingTalk) Send(title, message string, content map[string]string) (res bool, err error) {
+func (n dingTalk) Send(title, message string, content map[string]string) (err error) {
 	resp := make(map[string]interface{})
 
 	var con string
@@ -49,27 +56,22 @@ func (n notifyChannelDingTalk) Send(title, message string, content map[string]st
 	}
 	params, _ := json.Marshal(tmp)
 	query := url.Values{}
-	query.Set("access_token", n.accessToken)
+	query.Set("access_token", n.getAccessToken())
 	if n.Secret != "" {
 		timestamp := time.Now().UnixNano() / 1e6
 		query.Set("timestamp", fmt.Sprintf("%v", timestamp))
 		query.Set("sign", n.getSign(timestamp))
 	}
-	err = tools.PostJson(n.api+query.Encode(), &resp, params, map[string]string{}, "application/json")
+	err = tools.PostJson(n.getApi()+query.Encode(), &resp, params, map[string]string{}, "application/json")
 	if err != nil {
 		return
 	}
 	if code, ok := resp["errcode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("钉钉消息发送失败 响应：%v", resp)
+		return fmt.Errorf("钉钉消息发送失败 响应：%v", resp)
 	}
-	return true, nil
-}
-func (n notifyChannelDingTalk) SendHTML(title, message, content string) (res bool, err error) {
-
-	return true, nil
+	return nil
 }
 
-func NewDingTalkNotify(webhook, secret string) Chan {
-	accessToken := strings.Split(webhook, "access_token=")[1]
-	return notifyChannelDingTalk{webhook, secret, accessToken, "https://oapi.dingtalk.com/robot/send?"}
+func (n dingTalk) SendHTML(title, message, content string) (err error) {
+	return nil
 }

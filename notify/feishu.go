@@ -9,16 +9,17 @@ import (
 )
 
 // 飞书通知渠道
-type notifyChannelFeiShu struct {
+type feiShu struct {
 	// 渠道接口地址
 	Webhook string
 }
-type FeishuContentPiece struct {
+
+type feiShuContentPiece struct {
 	tag  string
 	text string
 }
 
-func (n notifyChannelFeiShu) Send(title, message string, content map[string]string) (res bool, err error) {
+func (n feiShu) Send(title, message string, content map[string]string) (err error) {
 	resp := make(map[string]interface{})
 	var con [][]map[string]string
 	con = append(con, []map[string]string{{"tag": "text", "text": message}})
@@ -42,11 +43,12 @@ func (n notifyChannelFeiShu) Send(title, message string, content map[string]stri
 		return
 	}
 	if code, ok := resp["StatusCode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("飞书发送失败 响应：%v", resp)
+		return fmt.Errorf("飞书发送失败 响应：%v", resp)
 	}
-	return true, nil
+	return nil
 }
-func (n *notifyChannelFeiShu) feishuToken() (string, error) {
+
+func (n *feiShu) token() (string, error) {
 	var target = new(struct {
 		Code              int
 		Msg               string
@@ -62,7 +64,8 @@ func (n *notifyChannelFeiShu) feishuToken() (string, error) {
 	}
 	return target.TenantAccessToken, nil
 }
-func (n notifyChannelFeiShu) SendHTML(title, message, content string) (res bool, err error) {
+
+func (n feiShu) SendHTML(title, message, content string) (err error) {
 	resp := make(map[string]interface{})
 	var con [][]map[string]string
 	con = append(con, []map[string]string{{"tag": "text", "text": message}, {"tag": "code", "text": content}})
@@ -83,11 +86,7 @@ func (n notifyChannelFeiShu) SendHTML(title, message, content string) (res bool,
 		return
 	}
 	if code, ok := resp["StatusCode"]; !ok || code.(float64) != 0 {
-		return false, fmt.Errorf("飞书发送失败 响应：%v", resp)
+		return fmt.Errorf("飞书发送失败 响应：%v", resp)
 	}
-	return true, nil
-}
-
-func NewFeiShuNotify(ApiUrl string) Chan {
-	return notifyChannelFeiShu{ApiUrl}
+	return nil
 }

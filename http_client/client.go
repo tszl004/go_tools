@@ -14,13 +14,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-type client struct {
+type Client struct {
 	proxyUrl    string
 	cli         *http.Client
 	notRedirect bool
 }
 
-func (c client) GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
+func (c Client) GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
 	bodyBytes, _, resp, err := c.Get(reqUrl, params, headers)
 	if len(bodyBytes) == 0 {
 		return resp, errors.Wrapf(err, "响应体为空")
@@ -34,7 +34,7 @@ func (c client) GetJson(reqUrl string, target interface{}, params url.Values, he
 	return resp, nil
 }
 
-func (c client) Get(reqUrl string, params url.Values, headers map[string]string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c Client) Get(reqUrl string, params url.Values, headers map[string]string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	reqHeader := http.Header{}
 	for k := range headers {
 		reqHeader.Set(k, headers[k])
@@ -44,7 +44,7 @@ func (c client) Get(reqUrl string, params url.Values, headers map[string]string)
 	return c.httpClient(http.MethodGet, reqUrl, nil, reqHeader)
 }
 
-func (c client) getClient() *http.Client {
+func (c Client) getClient() *http.Client {
 	if c.cli != nil {
 		return c.cli
 	}
@@ -71,7 +71,7 @@ func (c client) getClient() *http.Client {
 	return c.cli
 }
 
-func (c client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c Client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	req, err = http.NewRequest(reqMethod, reqUrl, reqBody)
 	if err != nil {
 		return nil, req, nil, err
@@ -92,7 +92,7 @@ func (c client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, h
 	return bodyBytes, req, resp, err
 }
 
-func (c client) Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+func (c Client) Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
 	var body io.Reader
 	switch params.(type) {
 	case url.Values:
@@ -118,7 +118,7 @@ func (c client) Post(reqUrl string, params interface{}, headers map[string]strin
 	return c.httpClient(http.MethodPost, reqUrl, body, reqHeader)
 }
 
-func (c client) PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {
+func (c Client) PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {
 	bodyBytes, req, _, err := c.Post(reqUrl, params, headers, contentType)
 	bodyStr := string(bodyBytes)
 	if bodyStr == "" {
@@ -134,19 +134,19 @@ func (c client) PostJson(reqUrl string, target interface{}, params interface{}, 
 	return nil
 }
 
-func (c client) FollowRedirect(redirect bool) {
+func (c Client) FollowRedirect(redirect bool) {
 	c.notRedirect = redirect
 }
 
-func NewClient(proxy ...string) *client {
+func NewClient(proxy ...string) *Client {
 	var proxyUrl string
 	if len(proxy) > 0 {
 		proxyUrl = proxy[0]
 	}
-	return &client{proxyUrl: proxyUrl}
+	return &Client{proxyUrl: proxyUrl}
 }
 
-func NewNotRedirectClient(proxy ...string) *client {
+func NewNotRedirectClient(proxy ...string) *Client {
 	cli := NewClient(proxy...)
 	cli.notRedirect = true
 	return cli

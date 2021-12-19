@@ -13,3 +13,7 @@ func TestParseInt(t *testing.T) {
 	num = ParseInt("1243as")
 	fmt.Println(num)
 }
+
+func TestTomorrow(t *testing.T) {
+	fmt.Println(Tomorrow())
+}

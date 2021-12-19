@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/tszl004/go_tools/core_vars"
 	"github.com/tszl004/go_tools/http_client"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
@@ -18,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime/debug"
@@ -30,9 +32,11 @@ import (
 	"github.com/qiniu/go-sdk/v7/storage"
 	"golang.org/x/crypto/ssh"
 )
+
 var (
 	httpCli = http_client.NewClient()
 )
+
 // MD5 md5加密
 func MD5(params string) string {
 	md5Ctx := md5.New()
@@ -345,7 +349,7 @@ func SplitToSliceInt(s, sep string) []int {
 }
 
 func RegexpMatchFirstStr(s, expr string) string {
-	r, err:= regexp.Compile(expr)
+	r, err := regexp.Compile(expr)
 	if err != nil {
 		return ""
 	}
@@ -353,7 +357,7 @@ func RegexpMatchFirstStr(s, expr string) string {
 }
 
 func RegexMatchAll(s, expr string) []string {
-	r, err:= regexp.Compile(expr)
+	r, err := regexp.Compile(expr)
 	if err != nil {
 		return nil
 	}
@@ -370,7 +374,7 @@ func RandIntN(n int) int {
 }
 
 func RandRange(min, max int) int {
-	return rand.Intn(max - min) + min
+	return rand.Intn(max-min) + min
 }
 
 // GbkToUtf8 GBK 转 UTF-8
@@ -386,7 +390,7 @@ func GbkToUtf8(s []byte) ([]byte, error) {
 func NumToNumByteSlice(num int) []int {
 	res := make([]int, 0)
 	for num > 0 {
-		res = append(res, num % 10)
+		res = append(res, num%10)
 		num /= 10
 	}
 	return ReverseIntSlice(res)
@@ -395,8 +399,30 @@ func NumToNumByteSlice(num int) []int {
 func ReverseIntSlice(list []int) []int {
 	length := len(list)
 	res := make([]int, length)
-	for i:= 0; i < length; i++ {
-		res[length - 1 - i] = list[i]
+	for i := 0; i < length; i++ {
+		res[length-1-i] = list[i]
 	}
 	return res
+}
+
+func FileGetContents(filePath string) ([]byte, error) {
+	filename, _ := filepath.Abs(filePath)
+	fileCon, err := ioutil.ReadFile(filename)
+
+	if err != nil {
+		return nil, err
+	}
+	return fileCon, nil
+}
+
+func Tomorrow(locArgs ...*time.Location) time.Time {
+	var loc *time.Location
+	if len(locArgs) == 0 {
+		loc = core_vars.RPCLoc
+	} else {
+		loc = locArgs[0]
+	}
+	tTime := time.Now().In(loc).Add(24 * time.Hour).Format(core_vars.DateLayout)
+	tomorrow, _ := time.ParseInLocation(core_vars.DateLayout, tTime, loc)
+	return tomorrow
 }
