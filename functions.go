@@ -426,3 +426,12 @@ func Tomorrow(locArgs ...*time.Location) time.Time {
 	tomorrow, _ := time.ParseInLocation(core_vars.DateLayout, tTime, loc)
 	return tomorrow
 }
+
+func AbsPath(path string) string {
+	if strings.Index(path, "~") == 0 {
+		homeDir, _ := os.UserHomeDir()
+		path = strings.Replace(path, "~", homeDir, 1)
+	}
+	path, _ = filepath.Abs(path)
+	return path
+}
