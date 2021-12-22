@@ -39,9 +39,32 @@ func (c Client) Get(reqUrl string, params url.Values, headers map[string]string)
 	for k := range headers {
 		reqHeader.Set(k, headers[k])
 	}
-	reqUrl += "?" + params.Encode()
+	req, err = http.NewRequest(http.MethodGet, reqUrl, nil)
+	if err != nil {
+		return nil, req, nil, err
+	}
+	req.URL, err = ParseUrl(reqUrl, params)
+	if err != nil {
+		return nil, req, nil, err
+	}
 
-	return c.httpClient(http.MethodGet, reqUrl, nil, reqHeader)
+	return c.httpClient(req, nil, reqHeader)
+}
+
+func ParseUrl(reqUrl string, params url.Values) (*url.URL, error) {
+	reqUrlObj, err := url.Parse(reqUrl)
+	if err != nil {
+		return reqUrlObj, err
+	}
+	urlParams := reqUrlObj.Query()
+	if params != nil {
+		for k, v := range params {
+			urlParams[k] = v
+		}
+		reqUrlObj.RawQuery = urlParams.Encode()
+	}
+
+	return reqUrlObj, nil
 }
 
 func (c Client) getClient() *http.Client {
@@ -71,25 +94,19 @@ func (c Client) getClient() *http.Client {
 	return c.cli
 }
 
-func (c Client) httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
-	req, err = http.NewRequest(reqMethod, reqUrl, reqBody)
-	if err != nil {
-		return nil, req, nil, err
-	}
-	req.Header = headers
-
-	resp, err = c.getClient().Do(req)
+func (c Client) httpClient(httpReq *http.Request, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+	resp, err = c.getClient().Do(httpReq)
 	// Not follow redirect err Skip
 	if err != nil && strings.Index(err.Error(), NotRedirectErr.Error()) < 0 {
-		return nil, req, resp, err
+		return nil, httpReq, resp, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, req, resp, err
+		return nil, httpReq, resp, err
 	}
 
-	return bodyBytes, req, resp, err
+	return bodyBytes, httpReq, resp, err
 }
 
 func (c Client) Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
@@ -115,7 +132,11 @@ func (c Client) Post(reqUrl string, params interface{}, headers map[string]strin
 	for k := range headers {
 		reqHeader.Set(k, headers[k])
 	}
-	return c.httpClient(http.MethodPost, reqUrl, body, reqHeader)
+	req, err = http.NewRequest(http.MethodPost, reqUrl, body)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return c.httpClient(req, body, reqHeader)
 }
 
 func (c Client) PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {

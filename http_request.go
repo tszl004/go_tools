@@ -1,101 +1,25 @@
 package tools
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
 func GetJson(reqUrl string, target interface{}, params url.Values, headers map[string]string) (*http.Response, error) {
-	bodyBytes, _, resp, err := Get(reqUrl, params, headers)
-	bodyStr := string(bodyBytes)
-	if bodyStr == "" {
-		return resp, errors.New("响应体为空")
-	}
-	err = json.Unmarshal([]byte(bodyStr), target)
-	if err != nil {
-		return resp, errors.New(err.Error() + ", JSON:" + bodyStr)
-	}
-	// 会出现 EOF错误暂时不知道是什么原因引起的
-	// err = json.NewDecoder(resp.Body).Decode(target)
-	return resp, nil
+	return httpCli.GetJson(reqUrl, target, params, headers)
 }
 
 func Get(reqUrl string, params url.Values, headers map[string]string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
-	reqHeader := http.Header{}
-	for k := range headers {
-		reqHeader.Set(k, headers[k])
-	}
-	reqUrl += "?" + params.Encode()
-
-	return httpClient(http.MethodGet, reqUrl, nil, reqHeader)
-}
-
-func httpClient(reqMethod string, reqUrl string, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
-	req, err = http.NewRequest(reqMethod, reqUrl, reqBody)
-	if err != nil {
-		return nil, req, nil, err
-	}
-	req.Header = headers
-
-	cli := http.Client{}
-	resp, err = cli.Do(req)
-	if err != nil {
-		return nil, req, nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, req, resp, err
-	}
-
-	return bodyBytes, req, resp, err
+	return httpCli.Get(reqUrl, params, headers)
 }
 
 func Post(reqUrl string, params interface{}, headers map[string]string, contentType string) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
-	var body io.Reader
-	switch params.(type) {
-	case url.Values:
-		body = strings.NewReader(params.(url.Values).Encode())
-	case string:
-		body = strings.NewReader(params.(string))
-	case []byte:
-		body = bytes.NewBuffer(params.([]byte))
-	default:
-		return nil, req, resp, errors.New("invalid params must be url.Values,[]byte or string")
-	}
-	reqHeader := http.Header{}
-	if contentType == "" {
-		contentType = "application/x-www-form-urlencoded"
-	}
-	reqHeader.Set("Content-Type", contentType)
-
-	for k := range headers {
-		reqHeader.Set(k, headers[k])
-	}
-	return httpClient(http.MethodPost, reqUrl, body, reqHeader)
+	return httpCli.Post(reqUrl, params, headers, contentType)
 }
 
 func PostJson(reqUrl string, target interface{}, params interface{}, headers map[string]string, contentType string) error {
-	bodyBytes, req, _, err := Post(reqUrl, params, headers, contentType)
-	bodyStr := string(bodyBytes)
-	if bodyStr == "" {
-		return errors.New("响应体为空")
-	}
-	err = json.Unmarshal([]byte(bodyStr), target)
-	if err != nil {
-		return errors.New("JSON 解析失败 error: " + err.Error() + "api:" + req.URL.String() + " json:" + bodyStr)
-	}
-
-	// 会出现 EOF错误暂时不知道是什么原因引起的
-	// err = json.NewDecoder(resp.Body).Decode(target)
-	return nil
+	return httpCli.PostJson(reqUrl, target, params, headers, contentType)
 }
 
 func GetCookieByRespHeader(header http.Header) string {
