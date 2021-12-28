@@ -8,8 +8,12 @@ import (
 
 // Sender 通知渠道接口
 type Sender interface {
-	Send(title, message string, content map[string]string) error
+	Send(title, message string, content []Content) error
 	SendHTML(title, message, content string) error
+}
+type Content struct {
+	Title   string
+	Content string
 }
 type DriverType string
 

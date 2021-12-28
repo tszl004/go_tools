@@ -95,6 +95,13 @@ func (c Client) getClient() *http.Client {
 }
 
 func (c Client) httpClient(httpReq *http.Request, reqBody io.Reader, headers http.Header) (bodyBytes []byte, req *http.Request, resp *http.Response, err error) {
+	rc, ok := reqBody.(io.ReadCloser)
+	if !ok && reqBody != nil {
+		rc = io.NopCloser(reqBody)
+	}
+	httpReq.Body = rc
+	httpReq.Header = headers
+
 	resp, err = c.getClient().Do(httpReq)
 	// Not follow redirect err Skip
 	if err != nil && strings.Index(err.Error(), NotRedirectErr.Error()) < 0 {

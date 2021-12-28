@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/tszl004/go_tools"
 	"net/url"
-	"reflect"
 )
 
 // 飞书通知渠道
@@ -19,12 +18,12 @@ type feiShuContentPiece struct {
 	text string
 }
 
-func (n feiShu) Send(title, message string, content map[string]string) (err error) {
+func (n feiShu) Send(title, message string, content []Content) (err error) {
 	resp := make(map[string]interface{})
 	var con [][]map[string]string
 	con = append(con, []map[string]string{{"tag": "text", "text": message}})
-	for _, k := range reflect.ValueOf(content).MapKeys() {
-		con = append(con, []map[string]string{{"tag": "text", "text": k.String() + content[k.String()]}})
+	for _, item := range content {
+		con = append(con, []map[string]string{{"tag": "text", "text": item.Title + ":" + item.Content}})
 	}
 	tmp := map[string]interface{}{
 		"msg_type": "post",

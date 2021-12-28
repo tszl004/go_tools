@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/tszl004/go_tools"
 	"net/url"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -38,20 +37,19 @@ func (n dingTalk) getSign(timestamp int64) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-func (n dingTalk) Send(title, message string, content map[string]string) (err error) {
+func (n dingTalk) Send(title, message string, content []Content) (err error) {
 	resp := make(map[string]interface{})
 
 	var con string
-	con = "####" + message
-	for _, k := range reflect.ValueOf(content).MapKeys() {
-		con += fmt.Sprintf("\n%s:\t%s", k.String(), content[k.String()])
+	con = "#### " + message + "\n"
+	for _, item := range content {
+		con += fmt.Sprintf("- %s:\t%s\n", item.Title, item.Content)
 	}
 	tmp := map[string]interface{}{
-		"msgtype": "actionCard",
-		"actionCard": map[string]interface{}{
+		"msgtype": "markdown",
+		"markdown": map[string]interface{}{
 			"title": title,
 			"text":  con,
-			"btns":  []int{},
 		},
 	}
 	params, _ := json.Marshal(tmp)
