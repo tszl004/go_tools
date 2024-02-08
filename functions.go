@@ -7,15 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/tszl004/go_tools/core_vars"
-	"github.com/tszl004/go_tools/http_client"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,7 +27,11 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/storage"
+	"github.com/tszl004/go_tools/core_vars"
+	"github.com/tszl004/go_tools/http_client"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 var (
@@ -434,4 +435,35 @@ func AbsPath(path string) string {
 	}
 	path, _ = filepath.Abs(path)
 	return path
+}
+
+// ServeListen 监听服务，兼容socket
+func ServeListen(listenAddr string, handler http.Handler) error {
+	if strings.Index(listenAddr, "unix") < 0 {
+		err := http.ListenAndServe(listenAddr, handler)
+		if err != nil {
+			return err
+		}
+	}
+
+	// socket listen
+	_ = os.Remove(listenAddr)
+	unixAddr, err := net.ResolveUnixAddr("unix", listenAddr)
+	if err != nil {
+		return err
+	}
+
+	lister, err := net.ListenUnix("unix", unixAddr)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = lister.Close() }()
+
+	err = http.Serve(lister, handler)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
